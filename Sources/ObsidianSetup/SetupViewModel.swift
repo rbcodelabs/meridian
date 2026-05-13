@@ -1,8 +1,7 @@
 import Foundation
 import AppKit
 
-// TODO: Update this URL after pushing obsidian-starter to GitHub
-private let vaultZipURL = "https://github.com/rbcodelabs/obsidian-starter/archive/refs/heads/main.zip"
+private let vaultZipURL = "https://github.com/rbcodelabs/obsidian-starter/archive/main.zip"
 
 @MainActor
 class SetupViewModel: ObservableObject {
