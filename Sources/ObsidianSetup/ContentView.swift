@@ -3,7 +3,7 @@ import SwiftUI
 enum Screen {
     case welcome
     case progress(SetupViewModel)
-    case done
+    case done(needsRestart: Bool)
 }
 
 struct ContentView: View {
@@ -21,11 +21,11 @@ struct ContentView: View {
 
             case .progress(let vm):
                 SetupProgressView(viewModel: vm) {
-                    screen = .done
+                    screen = .done(needsRestart: vm.needsRestart)
                 }
 
-            case .done:
-                DoneView()
+            case .done(let needsRestart):
+                DoneView(needsRestart: needsRestart)
             }
         }
         .padding(36)

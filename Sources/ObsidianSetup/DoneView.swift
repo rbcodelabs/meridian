@@ -2,6 +2,8 @@ import SwiftUI
 import AppKit
 
 struct DoneView: View {
+    let needsRestart: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
@@ -11,13 +13,19 @@ struct DoneView: View {
                 .foregroundStyle(.green)
                 .padding(.bottom, 20)
 
-            Text("You're all set!")
+            Text("Vault is ready!")
                 .font(.system(size: 28, weight: .bold))
                 .padding(.bottom, 10)
 
-            Text("Your vault is open in Obsidian.")
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 4)
+            if needsRestart {
+                Label("Restart Obsidian to see your new vault in the list.", systemImage: "arrow.counterclockwise.circle.fill")
+                    .foregroundStyle(.orange)
+                    .padding(.bottom, 4)
+            } else {
+                Text("Your vault is open in Obsidian.")
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+            }
 
             Text("When Obsidian asks to enable plugins, click **Trust author and enable plugin**.")
                 .multilineTextAlignment(.center)
@@ -28,7 +36,16 @@ struct DoneView: View {
 
             Divider().padding(.bottom, 20)
 
-            HStack(spacing: 12) {
+            if needsRestart {
+                Button("Restart Obsidian") {
+                    NSRunningApplication.runningApplications(withBundleIdentifier: "md.obsidian")
+                        .forEach { $0.terminate() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Obsidian.app"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
                 Button("Open Obsidian") {
                     NSWorkspace.shared.open(URL(string: "obsidian://")!)
                 }

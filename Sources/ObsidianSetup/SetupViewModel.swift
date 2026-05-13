@@ -8,9 +8,10 @@ class SetupViewModel: ObservableObject {
     @Published var steps: [SetupStep] = [
         SetupStep(title: "Check Obsidian is installed"),
         SetupStep(title: "Download vault"),
-        SetupStep(title: "Open in Obsidian"),
+        SetupStep(title: "Register & open in Obsidian"),
     ]
     @Published var isComplete = false
+    @Published var needsRestart = false
     @Published var errorMessage: String?
 
     let vaultURL: URL
@@ -91,15 +92,77 @@ class SetupViewModel: ObservableObject {
     }
 
     private func openVault() async {
-        update(2, .running)
-        let vaultName = vaultURL.lastPathComponent
-        let encoded = vaultName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? vaultName
-        if let url = URL(string: "obsidian://open?vault=\(encoded)") {
-            NSWorkspace.shared.open(url)
+        update(2, .running, detail: "Registering vault…")
+
+        do {
+            try registerVaultWithObsidian()
+        } catch {
+            update(2, .failed("Could not register vault"))
+            errorMessage = "Open Obsidian manually → File → Open Vault → \(vaultURL.path)"
+            return
         }
-        try? await Task.sleep(for: .milliseconds(600))
-        update(2, .done)
-        isComplete = true
+
+        let wasRunning = isObsidianRunning()
+
+        if wasRunning {
+            // Can't open the new vault into a running Obsidian — registry changes
+            // are only picked up on launch. Tell the user to restart.
+            needsRestart = true
+            update(2, .done)
+            isComplete = true
+        } else {
+            update(2, .running, detail: "Opening Obsidian…")
+            let vaultName = vaultURL.lastPathComponent
+            let encoded = vaultName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? vaultName
+            NSWorkspace.shared.open(URL(string: "obsidian://open?vault=\(encoded)")!)
+            try? await Task.sleep(for: .milliseconds(500))
+            update(2, .done)
+            isComplete = true
+        }
+    }
+
+    private func isObsidianRunning() -> Bool {
+        NSRunningApplication.runningApplications(withBundleIdentifier: "md.obsidian")
+            .contains { !$0.isTerminated }
+    }
+
+    private func registerVaultWithObsidian() throws {
+        let obsidianDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/obsidian")
+        let registryURL = obsidianDir.appendingPathComponent("obsidian.json")
+
+        // Read existing registry
+        let data = try Data(contentsOf: registryURL)
+        var registry = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        var vaults = registry["vaults"] as? [String: Any] ?? [:]
+
+        // Skip if this path is already registered
+        let alreadyRegistered = vaults.values.contains { entry in
+            (entry as? [String: Any])?["path"] as? String == vaultURL.path
+        }
+        guard !alreadyRegistered else { return }
+
+        // Generate a random 16-char hex vault ID (matches Obsidian's format)
+        let vaultID = (0..<8).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+
+        vaults[vaultID] = [
+            "path": vaultURL.path,
+            "ts": Int(Date().timeIntervalSince1970 * 1000),
+            "open": true
+        ]
+        registry["vaults"] = vaults
+
+        // Write updated obsidian.json
+        let updated = try JSONSerialization.data(withJSONObject: registry, options: [.prettyPrinted])
+        try updated.write(to: registryURL)
+
+        // Also write the per-vault {vaultID}.json — Obsidian won't show the vault
+        // in its picker without this file, even if obsidian.json is correct.
+        let windowData = """
+            {"x":0,"y":0,"width":1200,"height":800,"isMaximized":false,"devTools":false,"zoom":0}
+            """
+        try windowData.write(to: obsidianDir.appendingPathComponent("\(vaultID).json"),
+                             atomically: true, encoding: .utf8)
     }
 
     // MARK: - Helpers
