@@ -11,6 +11,7 @@ struct WelcomeView: View {
 
     @State private var options = SetupOptions()
     @State private var hasClaudeLogin: Bool = false
+    @State private var hasGWS: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -78,10 +79,18 @@ struct WelcomeView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Toggle("", isOn: $options.installGWS)
                         .labelsHidden()
+                        .disabled(hasGWS)
                         .padding(.top, 2)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Google Workspace CLI (gws)")
-                            .fontWeight(.medium)
+                        HStack(spacing: 6) {
+                            Text("Google Workspace CLI (gws)")
+                                .fontWeight(.medium)
+                            if hasGWS {
+                                Label("Already installed", systemImage: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
+                        }
                         Text("Lets Claude access Drive, Gmail, Calendar, and Docs — requires a Keeper login step")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -101,7 +110,12 @@ struct WelcomeView: View {
                 .disabled(vaultPath.isEmpty)
             }
         }
-        .onAppear { hasClaudeLogin = detectClaudeLogin() }
+        .onAppear {
+            hasClaudeLogin = detectClaudeLogin()
+            if hasClaudeLogin { options.installClaudeCode = false }
+            hasGWS = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/gws")
+            if hasGWS { options.installGWS = false }
+        }
     }
 
     // MARK: - Helpers

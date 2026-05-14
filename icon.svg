@@ -39,7 +39,18 @@
     </filter>
   </defs>
 
-  <!-- Subtle radial glow behind gem -->
+  <!-- Clip path so everything outside the rounded rect is transparent -->
+  <defs>
+    <clipPath id="roundedClip">
+      <rect width="1024" height="1024" rx="220" ry="220"/>
+    </clipPath>
+  </defs>
+
+  <!-- Everything inside this group is clipped to the rounded rect -->
+  <g clip-path="url(#roundedClip)">
+    <rect width="1024" height="1024" fill="url(#bgGrad)"/>
+
+    <!-- Subtle radial glow behind gem -->
   <ellipse cx="512" cy="500" rx="280" ry="260" fill="#7c3aed" opacity="0.15"/>
 
   <!-- GEM SHAPE — Obsidian-style faceted crystal -->
@@ -107,5 +118,7 @@
 
   <!-- Top face highlight sheen -->
   <polygon points="512,188 590,330 512,360 434,330" fill="white" opacity="0.07"/>
+
+  </g><!-- end rounded clip group -->
 
 </svg>
