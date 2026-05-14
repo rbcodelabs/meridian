@@ -39,6 +39,18 @@ class SetupViewModel: ObservableObject {
     private var stepGWSInstall = -1
     private var stepGWSAuth = -1
 
+    // Resolved at runtime — /opt/homebrew on Apple Silicon, /usr/local on Intel
+    private var brewPath: String {
+        if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/brew") {
+            return "/opt/homebrew/bin/brew"
+        }
+        return "/usr/local/bin/brew"
+    }
+    private var brewBinDir: String {
+        FileManager.default.fileExists(atPath: "/opt/homebrew/bin/brew")
+            ? "/opt/homebrew/bin" : "/usr/local/bin"
+    }
+
     init(vaultURL: URL, options: SetupOptions) {
         self.vaultURL = vaultURL
         self.options = options
@@ -215,33 +227,27 @@ class SetupViewModel: ObservableObject {
         let idx = stepClaudeCode
 
         // Check if already installed
-        let brewPath = "/opt/homebrew/bin"
-        let npmPaths = ["\(brewPath)/claude", "/usr/local/bin/claude"]
-        if npmPaths.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
+        let claudePaths = ["\(brewBinDir)/claude", "/usr/local/bin/claude"]
+        if claudePaths.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
             update(idx, .skipped("Already installed"))
             return
         }
 
-        // Need npm — check for it via Homebrew node first, then system node
-        let nodePaths = ["\(brewPath)/npm", "/usr/local/bin/npm"]
-        guard let npm = nodePaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        // Need npm — check for it via Homebrew node first
+        let npmPaths = ["\(brewBinDir)/npm", "/usr/local/bin/npm"]
+        if npmPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) == nil {
             // Install node via Homebrew first
             update(idx, .running, detail: "Installing Node.js…")
-            let nodeResult = await shell("\(brewPath)/brew", "install", "node")
+            let nodeResult = await shell(brewPath, "install", "node")
             guard nodeResult.exitCode == 0 else {
                 update(idx, .failed("Node.js install failed"))
                 errorMessage = nodeResult.output
                 return
             }
-            // Retry npm path after install
-            guard let npm2 = nodePaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-                update(idx, .failed("npm not found after Node install"))
-                return
-            }
-            update(idx, .running, detail: "Installing Claude Code…")
-            let result = await shell(npm2, "install", "-g", "@anthropic-ai/claude-code")
-            if result.exitCode == 0 { update(idx, .done) }
-            else { update(idx, .failed("Install failed")); errorMessage = result.output }
+        }
+
+        guard let npm = npmPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            update(idx, .failed("npm not found after Node install"))
             return
         }
 
@@ -259,7 +265,7 @@ class SetupViewModel: ObservableObject {
 
     private func installKeeperCommander() async -> Bool {
         let idx = stepKeeperInstall
-        let keeperPath = "/opt/homebrew/bin/keeper"
+        let keeperPath = "\(brewBinDir)/keeper"
 
         if FileManager.default.fileExists(atPath: keeperPath) {
             update(idx, .skipped("Already installed"))
@@ -267,7 +273,7 @@ class SetupViewModel: ObservableObject {
         }
 
         update(idx, .running, detail: "Installing via Homebrew…")
-        let result = await shell("/opt/homebrew/bin/brew", "install", "keeper-commander")
+        let result = await shell(brewPath, "install", "keeper-commander")
         if result.exitCode == 0 {
             update(idx, .done)
             return true
@@ -282,7 +288,7 @@ class SetupViewModel: ObservableObject {
 
     private func installGWS() async -> Bool {
         let idx = stepGWSInstall
-        let gwsPath = "/opt/homebrew/bin/gws"
+        let gwsPath = "\(brewBinDir)/gws"
 
         if FileManager.default.fileExists(atPath: gwsPath) {
             update(idx, .skipped("Already installed"))
@@ -290,7 +296,8 @@ class SetupViewModel: ObservableObject {
         }
 
         update(idx, .running, detail: "Installing via Homebrew…")
-        let result = await shell("/opt/homebrew/bin/brew", "install", "gws")
+        // Formula is "googleworkspace-cli" — installs the "gws" binary
+        let result = await shell(brewPath, "install", "googleworkspace-cli")
         if result.exitCode == 0 {
             update(idx, .done)
             return true
@@ -307,24 +314,25 @@ class SetupViewModel: ObservableObject {
 
         // Build a shell script that:
         // 1. Opens a new Terminal window
-        // 2. Runs keeper-login (SSO browser flow)
+        // 2. Runs keeper login (SSO browser flow)
         // 3. Pulls client_id + client_secret from Keeper into env vars
         // 4. Runs gws auth login (browser opens for Google consent)
         // The Terminal window stays open so the user can see progress.
+        let gwsBin = "\(brewBinDir)/gws"
         let authScript = """
         tell application "Terminal"
             activate
             do script "echo '🔐 Step 1: Log in to Keeper (your browser will open)...' && \\
-                keeper login $USER@redventures.com && \\
+                \(brewBinDir)/keeper login $USER@redventures.com && \\
                 echo '✅ Keeper login complete.' && \\
                 echo '' && \\
                 echo '🔑 Fetching OAuth credentials...' && \\
-                export GOOGLE_WORKSPACE_CLI_CLIENT_ID=$(keeper get \(gwsKeeperUID) --format json | python3 -c \\"import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='login']\\") && \\
-                export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET=$(keeper get \(gwsKeeperUID) --format json | python3 -c \\"import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='password']\\") && \\
+                export GOOGLE_WORKSPACE_CLI_CLIENT_ID=$(\(brewBinDir)/keeper get \(gwsKeeperUID) --format json | python3 -c \\"import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='login']\\") && \\
+                export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET=$(\(brewBinDir)/keeper get \(gwsKeeperUID) --format json | python3 -c \\"import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='password']\\") && \\
                 echo '✅ Credentials loaded.' && \\
                 echo '' && \\
                 echo '🌐 Step 2: Authorise with Google (your browser will open)...' && \\
-                /opt/homebrew/bin/gws auth login --scopes '\(gwsScopes)' && \\
+                \(gwsBin) auth login --scopes '\(gwsScopes)' && \\
                 echo '' && \\
                 echo '✅ Google Workspace CLI is ready!' && \\
                 echo 'You can close this window.'"
