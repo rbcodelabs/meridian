@@ -7,13 +7,15 @@ struct SetupProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
-            Text("Setting up your vault…")
+            Text("Setting up your workspace…")
                 .font(.system(size: 24, weight: .bold))
                 .padding(.bottom, 28)
 
-            VStack(alignment: .leading, spacing: 20) {
-                ForEach(viewModel.steps) { step in
-                    StepRow(step: step)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(viewModel.steps) { step in
+                        StepRow(step: step)
+                    }
                 }
             }
 
@@ -49,15 +51,17 @@ struct StepRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(step.title)
                     .fontWeight(step.status == .running ? .semibold : .regular)
+                    .foregroundStyle(step.status == .skipped("") ? .secondary : .primary)
                 if !step.detail.isEmpty {
                     Text(step.detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 if case .failed(let msg) = step.status, !msg.isEmpty {
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                    Text(msg).font(.caption).foregroundStyle(.red)
+                }
+                if case .skipped(let msg) = step.status, !msg.isEmpty {
+                    Text(msg).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -76,6 +80,10 @@ struct StepRow: View {
         case .done:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
+                .font(.title2)
+        case .skipped:
+            Image(systemName: "minus.circle.fill")
+                .foregroundStyle(.secondary)
                 .font(.title2)
         case .failed:
             Image(systemName: "xmark.circle.fill")

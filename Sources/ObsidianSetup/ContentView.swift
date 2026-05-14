@@ -13,8 +13,8 @@ struct ContentView: View {
         Group {
             switch screen {
             case .welcome:
-                WelcomeView { vaultURL in
-                    let vm = SetupViewModel(vaultURL: vaultURL)
+                WelcomeView { vaultURL, options in
+                    let vm = SetupViewModel(vaultURL: vaultURL, options: options)
                     screen = .progress(vm)
                     Task { await vm.run() }
                 }
@@ -29,6 +29,6 @@ struct ContentView: View {
             }
         }
         .padding(36)
-        .frame(width: 520, height: 420)
+        .frame(width: 540, height: 520)
     }
 }
