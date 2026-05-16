@@ -29,12 +29,14 @@ class SetupViewModel: ObservableObject {
     let vaultURL: URL
     let options: SetupOptions
 
-    // Step index constants — set dynamically based on options
-    private var stepObsidian = 0
-    private var stepDownload = 1
-    private var stepRegister = 2
+    // Step index constants — set dynamically based on options; -1 means not included
+    private var stepObsidianCheck = -1
+    private var stepObsidianDownload = -1
+    private var stepObsidianRegister = -1
     private var stepHomebrew = -1
     private var stepClaudeCode = -1
+    private var stepGitHubInstall = -1
+    private var stepGitHubAuth = -1
     private var stepKeeperInstall = -1
     private var stepGWSInstall = -1
     private var stepGWSAuth = -1
@@ -55,15 +57,21 @@ class SetupViewModel: ObservableObject {
         self.vaultURL = vaultURL
         self.options = options
 
-        var s: [SetupStep] = [
-            SetupStep(title: "Check Obsidian is installed"),
-            SetupStep(title: "Download vault"),
-            SetupStep(title: "Register & open in Obsidian"),
-        ]
+        var s: [SetupStep] = []
+        var idx = 0
 
-        var idx = 3
+        if options.installObsidian {
+            stepObsidianCheck = idx; idx += 1
+            s.append(SetupStep(title: "Check Obsidian is installed"))
 
-        if options.installClaudeCode || options.installGWS {
+            stepObsidianDownload = idx; idx += 1
+            s.append(SetupStep(title: "Download vault"))
+
+            stepObsidianRegister = idx; idx += 1
+            s.append(SetupStep(title: "Register & open in Obsidian"))
+        }
+
+        if options.installHomebrew {
             stepHomebrew = idx; idx += 1
             s.append(SetupStep(title: "Install Homebrew"))
         }
@@ -71,6 +79,14 @@ class SetupViewModel: ObservableObject {
         if options.installClaudeCode {
             stepClaudeCode = idx; idx += 1
             s.append(SetupStep(title: "Install Claude Code"))
+        }
+
+        if options.installGitHub {
+            stepGitHubInstall = idx; idx += 1
+            s.append(SetupStep(title: "Install GitHub CLI"))
+
+            stepGitHubAuth = idx; idx += 1
+            s.append(SetupStep(title: "Sign in to GitHub"))
         }
 
         if options.installGWS {
@@ -88,17 +104,23 @@ class SetupViewModel: ObservableObject {
     }
 
     func run() async {
-        // Core vault steps
-        guard await checkObsidian() else { return }
-        guard await downloadAndExtract() else { return }
-        await openVault()
+        // Obsidian vault steps
+        if options.installObsidian {
+            guard await checkObsidian() else { return }
+            guard await downloadAndExtract() else { return }
+            await openVault()
+        }
 
         // Optional tooling steps
-        if options.installClaudeCode || options.installGWS {
+        if options.installHomebrew {
             guard await installHomebrew() else { return }
         }
         if options.installClaudeCode {
             await installClaudeCode()
+        }
+        if options.installGitHub {
+            guard await installGitHubCLI() else { return }
+            await authenticateGitHub()
         }
         if options.installGWS {
             guard await installKeeperCommander() else { return }
@@ -112,13 +134,13 @@ class SetupViewModel: ObservableObject {
     // MARK: - Vault Steps
 
     private func checkObsidian() async -> Bool {
-        update(stepObsidian, .running)
+        update(stepObsidianCheck, .running)
         let exists = FileManager.default.fileExists(atPath: "/Applications/Obsidian.app")
         if exists {
-            update(stepObsidian, .done)
+            update(stepObsidianCheck, .done)
             return true
         } else {
-            update(stepObsidian, .failed("Not found"))
+            update(stepObsidianCheck, .failed("Not found"))
             errorMessage = "Obsidian isn't installed. Opening the download page now — install it, then run this app again."
             NSWorkspace.shared.open(URL(string: "https://obsidian.md/download")!)
             return false
@@ -126,60 +148,65 @@ class SetupViewModel: ObservableObject {
     }
 
     private func downloadAndExtract() async -> Bool {
-        update(stepDownload, .running, detail: "Downloading…")
+        update(stepObsidianDownload, .running, detail: "Downloading…")
         guard let zipURL = URL(string: vaultZipURL) else {
-            update(stepDownload, .failed("Invalid URL"))
+            update(stepObsidianDownload, .failed("Invalid URL"))
             return false
         }
         do {
             let (tmpFile, _) = try await URLSession.shared.download(from: zipURL)
-            update(stepDownload, .running, detail: "Extracting…")
+            update(stepObsidianDownload, .running, detail: "Extracting…")
             let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
             let result = await shell("/usr/bin/unzip", "-q", tmpFile.path, "-d", tmpDir.path)
             guard result.exitCode == 0 else {
-                update(stepDownload, .failed("Extraction failed"))
+                update(stepObsidianDownload, .failed("Extraction failed"))
                 errorMessage = result.output
                 return false
             }
             let contents = try FileManager.default.contentsOfDirectory(at: tmpDir, includingPropertiesForKeys: nil)
             guard let extractedFolder = contents.first else {
-                update(stepDownload, .failed("Empty archive"))
+                update(stepObsidianDownload, .failed("Empty archive"))
                 return false
             }
             if FileManager.default.fileExists(atPath: vaultURL.path) {
                 try FileManager.default.removeItem(at: vaultURL)
             }
             try FileManager.default.moveItem(at: extractedFolder, to: vaultURL)
-            update(stepDownload, .done)
+
+            // Prune any plugins the user deselected
+            let selectedIDs = Set(options.obsidianPlugins.filter(\.isSelected).map(\.id))
+            prunePlugins(at: vaultURL, selectedIDs: selectedIDs)
+
+            update(stepObsidianDownload, .done)
             return true
         } catch {
-            update(stepDownload, .failed(error.localizedDescription))
+            update(stepObsidianDownload, .failed(error.localizedDescription))
             errorMessage = error.localizedDescription
             return false
         }
     }
 
     private func openVault() async {
-        update(stepRegister, .running, detail: "Registering vault…")
+        update(stepObsidianRegister, .running, detail: "Registering vault…")
         do {
             try registerVaultWithObsidian()
         } catch {
-            update(stepRegister, .failed("Could not register vault"))
+            update(stepObsidianRegister, .failed("Could not register vault"))
             errorMessage = "Open Obsidian manually → File → Open Vault → \(vaultURL.path)"
             return
         }
         let wasRunning = isObsidianRunning()
         if wasRunning {
             needsRestart = true
-            update(stepRegister, .done)
+            update(stepObsidianRegister, .done)
         } else {
-            update(stepRegister, .running, detail: "Opening Obsidian…")
+            update(stepObsidianRegister, .running, detail: "Opening Obsidian…")
             let vaultName = vaultURL.lastPathComponent
             let encoded = vaultName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? vaultName
             NSWorkspace.shared.open(URL(string: "obsidian://open?vault=\(encoded)")!)
             try? await Task.sleep(for: .milliseconds(500))
-            update(stepRegister, .done)
+            update(stepObsidianRegister, .done)
         }
     }
 
@@ -257,6 +284,62 @@ class SetupViewModel: ObservableObject {
             update(idx, .done)
         } else {
             update(idx, .failed("Install failed"))
+            errorMessage = result.output
+        }
+    }
+
+    // MARK: - GitHub CLI
+
+    private func installGitHubCLI() async -> Bool {
+        let idx = stepGitHubInstall
+        let ghPath = "\(brewBinDir)/gh"
+
+        if FileManager.default.fileExists(atPath: ghPath) {
+            update(idx, .skipped("Already installed"))
+            return true
+        }
+
+        update(idx, .running, detail: "Installing via Homebrew…")
+        let result = await shell(brewPath, "install", "gh")
+        if result.exitCode == 0 {
+            update(idx, .done)
+            return true
+        } else {
+            update(idx, .failed("Install failed"))
+            errorMessage = result.output
+            return false
+        }
+    }
+
+    private func authenticateGitHub() async {
+        let idx = stepGitHubAuth
+
+        // Already authed if hosts.yml was written by a prior `gh auth login`
+        let hostsFile = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/gh/hosts.yml")
+        if FileManager.default.fileExists(atPath: hostsFile.path) {
+            update(idx, .skipped("Already signed in"))
+            return
+        }
+
+        update(idx, .running, detail: "Opening Terminal for GitHub login…")
+
+        let ghBin = "\(brewBinDir)/gh"
+        let authScript = """
+        tell application "Terminal"
+            activate
+            do script "echo 'Signing in to GitHub — your browser will open for OAuth...' && \\
+                \(ghBin) auth login --web && \\
+                echo '' && \\
+                echo 'GitHub sign-in complete. You can close this window.'"
+        end tell
+        """
+
+        let result = await shell("/usr/bin/osascript", "-e", authScript)
+        if result.exitCode == 0 {
+            update(idx, .done, detail: "Complete the sign-in in the Terminal window")
+        } else {
+            update(idx, .failed("Could not open Terminal"))
             errorMessage = result.output
         }
     }
@@ -351,6 +434,32 @@ class SetupViewModel: ObservableObject {
     }
 
     // MARK: - Shared Helpers
+
+    /// Rewrites community-plugins.json to only include selected plugin IDs,
+    /// and deletes bundled plugin folders for any that were deselected.
+    private func prunePlugins(at vaultURL: URL, selectedIDs: Set<String>) {
+        let communityPluginsURL = vaultURL
+            .appendingPathComponent(".obsidian/community-plugins.json")
+        let pluginsDir = vaultURL
+            .appendingPathComponent(".obsidian/plugins")
+
+        // Rewrite community-plugins.json with only the selected IDs
+        if let data = try? Data(contentsOf: communityPluginsURL),
+           let allIDs = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            let filtered = allIDs.filter { selectedIDs.contains($0) }
+            if let updated = try? JSONSerialization.data(withJSONObject: filtered,
+                                                         options: [.prettyPrinted]) {
+                try? updated.write(to: communityPluginsURL)
+            }
+        }
+
+        // Delete bundled plugin folders that weren't selected
+        let folders = (try? FileManager.default.contentsOfDirectory(
+            at: pluginsDir, includingPropertiesForKeys: nil)) ?? []
+        for folder in folders where !selectedIDs.contains(folder.lastPathComponent) {
+            try? FileManager.default.removeItem(at: folder)
+        }
+    }
 
     private func isObsidianRunning() -> Bool {
         NSRunningApplication.runningApplications(withBundleIdentifier: "md.obsidian")

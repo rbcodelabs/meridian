@@ -3,7 +3,7 @@ import SwiftUI
 enum Screen {
     case welcome
     case progress(SetupViewModel)
-    case done(needsRestart: Bool)
+    case done(needsRestart: Bool, installedObsidian: Bool, gwsAuthPending: Bool)
 }
 
 struct ContentView: View {
@@ -21,11 +21,15 @@ struct ContentView: View {
 
             case .progress(let vm):
                 SetupProgressView(viewModel: vm) {
-                    screen = .done(needsRestart: vm.needsRestart)
+                    screen = .done(
+                        needsRestart: vm.needsRestart,
+                        installedObsidian: vm.options.installObsidian,
+                        gwsAuthPending: vm.options.installGWS
+                    )
                 }
 
-            case .done(let needsRestart):
-                DoneView(needsRestart: needsRestart)
+            case .done(let needsRestart, let installedObsidian, let gwsAuthPending):
+                DoneView(needsRestart: needsRestart, installedObsidian: installedObsidian, gwsAuthPending: gwsAuthPending)
             }
         }
         .padding(36)
