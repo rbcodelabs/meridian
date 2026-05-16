@@ -20,8 +20,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        // Set app icon from bundled resource (works for swift run + .app bundle)
-        if let iconURL = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+        // Set app icon from the .app bundle's Resources folder.
+        // Bundle.main works for both swift run and .app bundle distributions.
+        if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
            let icon = NSImage(contentsOf: iconURL) {
             NSApp.applicationIconImage = icon
         }

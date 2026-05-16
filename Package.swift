@@ -7,11 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ObsidianSetup",
-            path: "Sources/ObsidianSetup",
-            resources: [
-                .copy("Resources/AppIcon.icns"),
-                .copy("Resources/AppIcon.png"),
-            ]
+            path: "Sources/ObsidianSetup"
         )
     ]
 )
