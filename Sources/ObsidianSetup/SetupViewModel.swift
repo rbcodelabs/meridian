@@ -245,10 +245,13 @@ class SetupViewModel: ObservableObject {
         update(idx, .running, detail: "This may take a few minutes…")
 
         // NONINTERACTIVE=1 suppresses the "press Return to continue" prompt.
-        // osascript runs the install script with administrator privileges,
-        // showing a native macOS password dialog instead of a terminal prompt.
+        // Pipe to bash rather than bash -c '$(curl ...)' — with single quotes the
+        // $() runs but its output is treated as a command name (hitting the shebang
+        // line), causing "#!/bin/bash: No such file or directory". Piping feeds the
+        // script as stdin so bash reads it correctly and ignores the shebang.
+        // osascript shows a native macOS password dialog for privilege escalation.
         let script = """
-        do shell script "NONINTERACTIVE=1 /bin/bash -c '$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)'" with administrator privileges
+        do shell script "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 bash" with administrator privileges
         """
         let result = await shell("/usr/bin/osascript", "-e", script)
 
