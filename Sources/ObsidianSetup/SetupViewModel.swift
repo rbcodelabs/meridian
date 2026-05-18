@@ -60,20 +60,21 @@ class SetupViewModel: ObservableObject {
         var s: [SetupStep] = []
         var idx = 0
 
+        // Homebrew runs first so it's available to install Obsidian and other tools
+        if options.installHomebrew {
+            stepHomebrew = idx; idx += 1
+            s.append(SetupStep(title: "Install Homebrew"))
+        }
+
         if options.installObsidian {
             stepObsidianCheck = idx; idx += 1
-            s.append(SetupStep(title: "Check Obsidian is installed"))
+            s.append(SetupStep(title: "Install Obsidian"))
 
             stepObsidianDownload = idx; idx += 1
             s.append(SetupStep(title: "Download vault"))
 
             stepObsidianRegister = idx; idx += 1
             s.append(SetupStep(title: "Register & open in Obsidian"))
-        }
-
-        if options.installHomebrew {
-            stepHomebrew = idx; idx += 1
-            s.append(SetupStep(title: "Install Homebrew"))
         }
 
         if options.installClaudeCode {
@@ -104,17 +105,18 @@ class SetupViewModel: ObservableObject {
     }
 
     func run() async {
-        // Obsidian vault steps
+        // Homebrew runs first so it's available for Obsidian and all other tools
+        if options.installHomebrew {
+            guard await installHomebrew() else { return }
+        }
+
         if options.installObsidian {
-            guard await checkObsidian() else { return }
+            guard await installObsidianApp() else { return }
             guard await downloadAndExtract() else { return }
             await openVault()
         }
 
-        // Optional tooling steps
-        if options.installHomebrew {
-            guard await installHomebrew() else { return }
-        }
+        // Remaining tooling steps
         if options.installClaudeCode {
             await installClaudeCode()
         }
@@ -133,18 +135,36 @@ class SetupViewModel: ObservableObject {
 
     // MARK: - Vault Steps
 
-    private func checkObsidian() async -> Bool {
+    private func installObsidianApp() async -> Bool {
         update(stepObsidianCheck, .running)
-        let exists = FileManager.default.fileExists(atPath: "/Applications/Obsidian.app")
-        if exists {
-            update(stepObsidianCheck, .done)
+
+        // Already installed — nothing to do
+        if FileManager.default.fileExists(atPath: "/Applications/Obsidian.app") {
+            update(stepObsidianCheck, .skipped("Already installed"))
             return true
-        } else {
-            update(stepObsidianCheck, .failed("Not found"))
-            errorMessage = "Obsidian isn't installed. Opening the download page now — install it, then run this app again."
-            NSWorkspace.shared.open(URL(string: "https://obsidian.md/download")!)
-            return false
         }
+
+        // Install via Homebrew if available (it will be if the Homebrew step ran first)
+        let brewAvailable = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/brew")
+            || FileManager.default.fileExists(atPath: "/usr/local/bin/brew")
+        if brewAvailable {
+            update(stepObsidianCheck, .running, detail: "Installing via Homebrew…")
+            let result = await shell(brewPath, "install", "--cask", "obsidian")
+            if result.exitCode == 0 {
+                update(stepObsidianCheck, .done)
+                return true
+            } else {
+                update(stepObsidianCheck, .failed("Install failed"))
+                errorMessage = result.output
+                return false
+            }
+        }
+
+        // Last resort: send to the download page
+        update(stepObsidianCheck, .failed("Not found"))
+        errorMessage = "Obsidian isn't installed and Homebrew isn't available. Opening the download page — install Obsidian, then run this app again."
+        NSWorkspace.shared.open(URL(string: "https://obsidian.md/download")!)
+        return false
     }
 
     private func downloadAndExtract() async -> Bool {
