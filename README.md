@@ -65,6 +65,61 @@ open build/ObsidianSetup.app
 
 Requires Xcode Command Line Tools (`xcode-select --install`).
 
+## Testing in a VM
+
+We test the installer end-to-end in a fresh macOS VM using [UTM](https://mac.getutm.app) on Apple Silicon.
+
+### First-time setup
+
+**1. Install UTM**
+
+```bash
+brew install --cask utm
+```
+
+**2. Download the macOS IPSW (~18 GB)**
+
+The `ipsw` CLI fetches the correct restore image for a virtual Mac directly from Apple:
+
+```bash
+brew install ipsw
+
+# Check the URL first
+ipsw download ipsw --device VirtualMac2,1 --latest --urls
+
+# Then download (~18 GB, takes a few minutes)
+ipsw download ipsw --device VirtualMac2,1 --latest --confirm
+```
+
+Or download directly with curl (replace the URL with the one from `--urls` above for the latest build):
+
+```bash
+curl -L -o ~/Downloads/UniversalMac_26.5_25F71_Restore.ipsw \
+  "https://updates.cdn-apple.com/2026SpringFCS/fullrestores/122-58869/DFB1CEEF-5619-4591-9924-E20DB2C8FED0/UniversalMac_26.5_25F71_Restore.ipsw"
+```
+
+**3. Create the VM in UTM**
+
+- Open UTM → **"+" → Virtualize → Apple**
+- Click **Browse** and select the downloaded `.ipsw` file
+- **Memory:** 8192 MB
+- **Storage:** 80 GB
+- **Name:** `macOS Tahoe - AgentSetup Test`
+- Save, then Play to run the macOS installer
+
+### Test checklist
+
+Run through these scenarios on a fresh macOS install (no prior Homebrew, Claude login, or `gh` auth):
+
+- [ ] **All components on** — full happy path, clean machine
+- [ ] **Obsidian only** — uncheck everything except Obsidian vault; confirm plugins install and vault opens
+- [ ] **CLI only** — uncheck Obsidian; confirm setup completes with no Obsidian prompts
+- [ ] **Plugin picker** — deselect a few plugins before setup; confirm they are absent from `.obsidian/plugins/` and `community-plugins.json` in the extracted vault
+- [ ] **Already-installed detection** — run the app a second time; all installed components should show "Already installed" and be unchecked
+- [ ] **GWS auth flow** — confirm Terminal window opens and Keeper + Google OAuth steps run in sequence
+
+---
+
 ## What's included in the vault
 
 - Claude Threads, Google Docs Sync, Linear Integration
