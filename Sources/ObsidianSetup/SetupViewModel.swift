@@ -250,7 +250,7 @@ class SetupViewModel: ObservableObject {
         let terminalScript = """
         tell application "Terminal"
             activate
-            do script "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/brew-install.sh && bash /tmp/brew-install.sh && echo '✅ Homebrew installed! You can close this window.'"
+            do script "rm -f /opt/homebrew/locks/vendor-install-ruby 2>/dev/null; curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/brew-install.sh && bash /tmp/brew-install.sh && echo '✅ Homebrew installed! You can close this window.'"
         end tell
         """
         let open = await shell("/usr/bin/osascript", "-e", terminalScript)
