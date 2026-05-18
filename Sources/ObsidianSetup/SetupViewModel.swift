@@ -235,40 +235,45 @@ class SetupViewModel: ObservableObject {
     private func installHomebrew() async -> Bool {
         let idx = stepHomebrew
 
-        // Check if already installed
-        if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/brew") ||
-           FileManager.default.fileExists(atPath: "/usr/local/bin/brew") {
+        let brewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+
+        if brewPaths.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
             update(idx, .skipped("Already installed"))
             return true
         }
 
-        update(idx, .running, detail: "This may take a few minutes…")
+        update(idx, .running, detail: "Opening Terminal — enter your password when prompted…")
 
-        // NONINTERACTIVE=1 suppresses the "press Return to continue" prompt.
-        // Pipe to bash rather than bash -c '$(curl ...)' — with single quotes the
-        // $() runs but its output is treated as a command name (hitting the shebang
-        // line), causing "#!/bin/bash: No such file or directory". Piping feeds the
-        // script as stdin so bash reads it correctly and ignores the shebang.
-        // osascript shows a native macOS password dialog for privilege escalation.
-        let script = """
-        do shell script "curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 bash" with administrator privileges
+        // Homebrew refuses to run as root, so we can't use osascript's
+        // "with administrator privileges". Instead open a Terminal window so
+        // the installer runs as the current user and sudo can prompt interactively.
+        let terminalScript = """
+        tell application "Terminal"
+            activate
+            do script "/bin/bash -c '$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)' && echo '✅ Homebrew installed! You can close this window.'"
+        end tell
         """
-        let result = await shell("/usr/bin/osascript", "-e", script)
-
-        if result.exitCode == 0 {
-            update(idx, .done)
-            return true
-        } else {
-            // User may have cancelled the password dialog
-            if result.output.contains("(-128)") {
-                update(idx, .failed("Cancelled"))
-                errorMessage = "Homebrew installation was cancelled. Please try again."
-            } else {
-                update(idx, .failed("Install failed"))
-                errorMessage = result.output
-            }
+        let open = await shell("/usr/bin/osascript", "-e", terminalScript)
+        guard open.exitCode == 0 else {
+            update(idx, .failed("Could not open Terminal"))
+            errorMessage = open.output
             return false
         }
+
+        // Poll until the brew binary appears (up to 10 minutes)
+        update(idx, .running, detail: "Waiting for Homebrew to finish… (check the Terminal window)")
+        let deadline = Date().addingTimeInterval(600)
+        while Date() < deadline {
+            if brewPaths.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
+                update(idx, .done)
+                return true
+            }
+            try? await Task.sleep(for: .seconds(3))
+        }
+
+        update(idx, .failed("Timed out"))
+        errorMessage = "Homebrew install took too long. Check the Terminal window for errors."
+        return false
     }
 
     // MARK: - Claude Code
