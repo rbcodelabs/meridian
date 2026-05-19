@@ -9,7 +9,7 @@ on:
         required: true
         default: "1.0.0"
 
-  # Auto-build on version tags pushed to the bankrate branch
+  # Auto-build on version tags pushed to main
   push:
     tags:
       - "v*"
@@ -22,8 +22,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: bankrate
 
       - name: Select Xcode
         # Ensure we use a modern Xcode with Swift 5.9+
@@ -32,22 +30,20 @@ jobs:
       - name: Build (release)
         run: ./build-app.sh release
 
-      # Rename the bundle so the zip has a clean name
-      - name: Rename bundle
+      - name: Set version
         run: |
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          mv build/ObsidianSetup.app "build/Bankrate Agent Setup.app"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Zip app bundle
         run: |
           cd build
-          ditto -c -k --keepParent "Bankrate Agent Setup.app" \
-            "Bankrate-Agent-Setup-${{ env.VERSION }}.zip"
+          ditto -c -k --keepParent "Meridian.app" \
+            "Bankrate-Meridian-${{ env.VERSION }}.zip"
 
       # ── Quarantine note ──────────────────────────────────────────────────────
       # The binary is unsigned. Recipients must right-click → Open on first
-      # launch, or run:  xattr -cr "Bankrate Agent Setup.app"
+      # launch, or run:  xattr -cr "Meridian.app"
       # To add Developer ID signing, store your cert + password as repository
       # secrets (MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD) and add a
       # codesign step before the zip step.
@@ -57,12 +53,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
-          name: "Bankrate Agent Setup ${{ env.VERSION }}"
+          name: "Bankrate Meridian ${{ env.VERSION }}"
           body: |
             ## Install
 
-            1. Download and unzip `Bankrate-Agent-Setup-${{ env.VERSION }}.zip`
-            2. Drag **Bankrate Agent Setup.app** to `/Applications`
+            1. Download and unzip `Bankrate-Meridian-${{ env.VERSION }}.zip`
+            2. Drag **Meridian.app** to `/Applications`
             3. **First launch:** right-click → Open (unsigned binary — only needed once)
 
             ## What's in this release
@@ -70,7 +66,7 @@ jobs:
             - Installs Homebrew, Claude Code, GitHub CLI, and Google Workspace CLI
             - Pre-configured for Bankrate (Keeper auth, bankrate.com email domain)
             - Clones the `bankrate-vault` starter vault into Obsidian
-          files: build/Bankrate-Agent-Setup-${{ env.VERSION }}.zip
+          files: build/Bankrate-Meridian-${{ env.VERSION }}.zip
           draft: false
           prerelease: false
         env:

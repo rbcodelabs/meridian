@@ -12,17 +12,17 @@ enum GWSSource: String, CaseIterable, Identifiable {
 
 // MARK: - OrgConfig
 
-/// Org-specific defaults for this build of Agent Setup.
+/// Org-specific defaults for this build of Meridian.
 /// Fork this repo, edit only this file, and ship a customized app for your team.
 enum OrgConfig {
 
     // MARK: Branding
 
     /// App title shown in the welcome view header.
-    static let appTitle    = "Bankrate Agent Setup"
+    static let appTitle    = "Bankrate Meridian"
 
     /// Subtitle shown below the header icon.
-    static let appSubtitle = "Set up your Bankrate AI-powered developer environment in minutes."
+    static let appSubtitle = "Your Bankrate agentic knowledge working environment."
 
     // MARK: Vault
 
