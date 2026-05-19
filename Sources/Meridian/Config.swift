@@ -42,4 +42,13 @@ enum OrgConfig {
     /// Pre-filled Keeper record UID for the GWS OAuth credentials.
     /// Set to "" if unknown — the user must fill it in before setup can run.
     static let defaultKeeperUID = ""
+
+    // MARK: Auto-update
+
+    /// Sparkle appcast URL. Hosted on the public meridian GitHub Pages site
+    /// under a bankrate/ subdirectory so no paid Pages plan is required.
+    static let updateFeedURL   = "https://rbcodelabs.github.io/meridian/bankrate/appcast.xml"
+
+    /// EdDSA public key matching the SPARKLE_PRIVATE_KEY secret in this repo.
+    static let updatePublicKey = "x2fnrxrwwAsX7nY100CsEab3WqgMmxjs8zSpBK9vyu0="
 }
