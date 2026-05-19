@@ -17,20 +17,13 @@ struct WelcomeView: View {
     @State private var hasGWS: Bool = false
 
     // GWS credential fields (combined into options.gwsCredentials on submit)
-    @State private var gwsSource: GWSSource = .keeper
+    @State private var gwsSource: GWSSource = OrgConfig.defaultGWSSource
     @State private var keeperEmail: String = ""
-    @State private var keeperUID: String = ""
+    @State private var keeperUID: String = OrgConfig.defaultKeeperUID
     @State private var opClientIDRef: String = ""
     @State private var opSecretRef: String = ""
     @State private var directClientID: String = ""
     @State private var directClientSecret: String = ""
-
-    enum GWSSource: String, CaseIterable, Identifiable {
-        case keeper      = "Keeper"
-        case onePassword = "1Password"
-        case direct      = "Enter directly"
-        var id: String { rawValue }
-    }
 
     private var canSetUp: Bool {
         let anySelected = options.installObsidian || options.installHomebrew ||
@@ -55,10 +48,10 @@ struct WelcomeView: View {
                     Image(systemName: "wand.and.stars")
                         .font(.system(size: 28))
                         .foregroundStyle(.purple)
-                    Text("Agent Setup")
+                    Text(OrgConfig.appTitle)
                         .font(.system(size: 26, weight: .bold))
                 }
-                Text("Set up your AI-powered developer environment in minutes.")
+                Text(OrgConfig.appSubtitle)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 38)
             }
@@ -216,7 +209,10 @@ struct WelcomeView: View {
 
                                 switch gwsSource {
                                 case .keeper:
-                                    TextField("Your email (e.g. you@company.com)", text: $keeperEmail)
+                                    let emailPlaceholder = OrgConfig.defaultEmailDomain.isEmpty
+                                        ? "Your email (e.g. you@company.com)"
+                                        : "Your email (e.g. you@\(OrgConfig.defaultEmailDomain))"
+                                    TextField(emailPlaceholder, text: $keeperEmail)
                                         .textFieldStyle(.roundedBorder)
                                     TextField("Keeper record UID", text: $keeperUID)
                                         .textFieldStyle(.roundedBorder)
@@ -277,6 +273,11 @@ struct WelcomeView: View {
             PluginPickerSheet(plugins: $options.obsidianPlugins)
         }
         .onAppear {
+            // Pre-fill org defaults
+            if options.vaultGitHubURL.isEmpty {
+                options.vaultGitHubURL = OrgConfig.defaultVaultURL
+            }
+
             hasHomebrew = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/brew")
                 || FileManager.default.fileExists(atPath: "/usr/local/bin/brew")
             if hasHomebrew { options.installHomebrew = false }
