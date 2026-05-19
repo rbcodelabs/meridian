@@ -31,6 +31,11 @@ jobs:
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      # Ad-hoc sign so generate_appcast's code signing check passes.
+      # This doesn't satisfy Gatekeeper — first launch still needs right-click → Open.
+      - name: Ad-hoc sign app bundle
+        run: codesign --sign - --force --deep build/Meridian.app
+
       - name: Zip app bundle
         run: |
           cd build
