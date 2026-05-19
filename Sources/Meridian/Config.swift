@@ -50,5 +50,5 @@ enum OrgConfig {
     static let updateFeedURL   = "https://rbcodelabs.github.io/meridian/bankrate/appcast.xml"
 
     /// EdDSA public key matching the SPARKLE_PRIVATE_KEY secret in this repo.
-    static let updatePublicKey = "x2fnrxrwwAsX7nY100CsEab3WqgMmxjs8zSpBK9vyu0="
+    static let updatePublicKey = "NUlUXdomYQaFCld5icDl1FxgdQ4Uw/Bp7VQnYHqqL0I="
 }

@@ -18,7 +18,7 @@ RESOURCES="$CONTENTS/Resources"
 
 # Sparkle auto-update — appcast hosted on the public meridian GitHub Pages site.
 SPARKLE_FEED_URL="https://rbcodelabs.github.io/meridian/bankrate/appcast.xml"
-SPARKLE_PUBLIC_KEY="x2fnrxrwwAsX7nY100CsEab3WqgMmxjs8zSpBK9vyu0="
+SPARKLE_PUBLIC_KEY="NUlUXdomYQaFCld5icDl1FxgdQ4Uw/Bp7VQnYHqqL0I="
 
 echo "▶ Building ($CONFIG)..."
 if [[ "$CONFIG" == "release" ]]; then
