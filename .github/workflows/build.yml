@@ -40,7 +40,7 @@ jobs:
       - name: Download Sparkle tools
         run: |
           curl -Lso sparkle.tar.xz \
-            https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz
+            https://github.com/sparkle-project/Sparkle/releases/download/2.9.2/Sparkle-2.9.2.tar.xz
           mkdir sparkle-tools && tar xf sparkle.tar.xz -C sparkle-tools
 
       - name: Generate appcast.xml
