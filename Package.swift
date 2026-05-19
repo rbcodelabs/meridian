@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "ObsidianSetup",
+    name: "Meridian",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "ObsidianSetup",
-            path: "Sources/ObsidianSetup"
+            name: "Meridian",
+            path: "Sources/Meridian"
         )
     ]
 )
