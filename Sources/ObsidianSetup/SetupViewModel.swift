@@ -1,8 +1,6 @@
 import Foundation
 import AppKit
 
-private let vaultZipURL = "https://github.com/rbcodelabs/obsidian-starter/archive/main.zip"
-private let gwsKeeperUID = "NhV8LWxIpwrVjHitqu1mJQ"
 private let gwsScopes = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/drive",
@@ -25,6 +23,21 @@ class SetupViewModel: ObservableObject {
     @Published var isComplete = false
     @Published var needsRestart = false
     @Published var errorMessage: String?
+    /// Set to a human-readable description while waiting for the user to
+    /// complete steps in a Terminal window. Cleared when polling finishes.
+    @Published var pendingTerminalAction: String?
+    /// True while polling — lets the UI show a "Try again" button.
+    @Published var retryEnabled = false
+
+    /// Set to true by `retryTerminalAuth()` to break out of the poll loop
+    /// without waiting for the timeout. Checked by `waitForFile`.
+    private var pollCancelled = false
+
+    /// Call from the UI to cancel the current Terminal poll and re-open the
+    /// Terminal window fresh. Works for both GitHub and GWS auth.
+    func retryTerminalAuth() {
+        pollCancelled = true
+    }
 
     let vaultURL: URL
     let options: SetupOptions
@@ -92,7 +105,8 @@ class SetupViewModel: ObservableObject {
 
         if options.installGWS {
             stepKeeperInstall = idx; idx += 1
-            s.append(SetupStep(title: "Install Keeper Commander"))
+            // Title set generically; will show "Not using Keeper" if skipped
+            s.append(SetupStep(title: "Install password manager CLI"))
 
             stepGWSInstall = idx; idx += 1
             s.append(SetupStep(title: "Install Google Workspace CLI"))
@@ -125,7 +139,12 @@ class SetupViewModel: ObservableObject {
             await authenticateGitHub()
         }
         if options.installGWS {
-            guard await installKeeperCommander() else { return }
+            if case .keeper = options.gwsCredentials {
+                guard await installKeeperCommander() else { return }
+            }
+            if case .onePassword = options.gwsCredentials {
+                guard await install1PasswordCLI() else { return }
+            }
             guard await installGWS() else { return }
             await authenticateGWS()
         }
@@ -169,7 +188,26 @@ class SetupViewModel: ObservableObject {
 
     private func downloadAndExtract() async -> Bool {
         update(stepObsidianDownload, .running, detail: "Downloading…")
-        guard let zipURL = URL(string: vaultZipURL) else {
+
+        // Skip download if no starter vault URL was provided
+        guard !options.vaultGitHubURL.isEmpty else {
+            // Create an empty vault directory and skip to done
+            try? FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            update(stepObsidianDownload, .skipped("No starter vault — empty vault created"))
+            return true
+        }
+
+        // Convert repo URL to archive URL if needed
+        let archiveURL: String
+        if options.vaultGitHubURL.hasSuffix(".zip") {
+            archiveURL = options.vaultGitHubURL
+        } else {
+            archiveURL = options.vaultGitHubURL
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                + "/archive/main.zip"
+        }
+
+        guard let zipURL = URL(string: archiveURL) else {
             update(stepObsidianDownload, .failed("Invalid URL"))
             return false
         }
@@ -250,7 +288,7 @@ class SetupViewModel: ObservableObject {
         let terminalScript = """
         tell application "Terminal"
             activate
-            do script "rm -f /opt/homebrew/locks/vendor-install-ruby 2>/dev/null; curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/brew-install.sh && bash /tmp/brew-install.sh && echo '✅ Homebrew installed! You can close this window.'"
+            do script "printf '\\\\033]0;Agent Setup — Install Homebrew\\\\007'; rm -f /opt/homebrew/locks/vendor-install-ruby 2>/dev/null; curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/brew-install.sh && bash /tmp/brew-install.sh && echo '✅ Homebrew installed! You can close this window.'"
         end tell
         """
         let open = await shell("/usr/bin/osascript", "-e", terminalScript)
@@ -295,14 +333,13 @@ class SetupViewModel: ObservableObject {
             update(idx, .running, detail: "Installing Node.js…")
             let nodeResult = await shell(brewPath, "install", "node")
             guard nodeResult.exitCode == 0 else {
-                update(idx, .failed("Node.js install failed"))
-                errorMessage = nodeResult.output
+                update(idx, .failed(firstMeaningfulLine(nodeResult.output, fallback: "Node.js install failed")))
                 return
             }
         }
 
         guard let npm = npmPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-            update(idx, .failed("npm not found after Node install"))
+            update(idx, .failed("npm not found — try re-running setup"))
             return
         }
 
@@ -311,9 +348,27 @@ class SetupViewModel: ObservableObject {
         if result.exitCode == 0 {
             update(idx, .done)
         } else {
-            update(idx, .failed("Install failed"))
-            errorMessage = result.output
+            update(idx, .failed(firstMeaningfulLine(result.output, fallback: "npm install failed")))
         }
+    }
+
+    /// Returns the first npm ERR! line from output, falling back to the first
+    /// non-empty line, then `fallback` — so step rows always show a useful hint.
+    private func firstMeaningfulLine(_ output: String, fallback: String) -> String {
+        let lines = output.components(separatedBy: "\n")
+        // Prefer an npm error line
+        if let err = lines.first(where: { $0.hasPrefix("npm ERR!") && $0.count > 9 }) {
+            return String(err.prefix(140))
+        }
+        // Or a generic Error line
+        if let err = lines.first(where: { $0.lowercased().contains("error") && !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            return String(err.prefix(140))
+        }
+        // First non-blank line
+        if let first = lines.first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            return String(first.prefix(140))
+        }
+        return fallback
     }
 
     // MARK: - GitHub CLI
@@ -353,29 +408,62 @@ class SetupViewModel: ObservableObject {
         update(idx, .running, detail: "Opening Terminal for GitHub login…")
 
         let ghBin = "\(brewBinDir)/gh"
-        let authScript = """
-        tell application "Terminal"
-            activate
-            do script "echo 'Signing in to GitHub — your browser will open for OAuth...' && \\
-                \(ghBin) auth login --web && \\
-                echo '' && \\
-                echo 'GitHub sign-in complete. You can close this window.'"
-        end tell
+        let ghScript = """
+        #!/bin/bash
+        set -e
+        printf '\\033]0;Agent Setup — GitHub Sign-in\\007'
+        echo 'Signing in to GitHub — your browser will open for OAuth...'
+        \(ghBin) auth login --web
+        echo ''
+        echo 'GitHub sign-in complete. You can close this window.'
         """
-
-        let result = await shell("/usr/bin/osascript", "-e", authScript)
-        if result.exitCode == 0 {
-            update(idx, .done, detail: "Complete the sign-in in the Terminal window")
-        } else {
+        let result = await runInTerminal(scriptPath: "/tmp/agent-setup-github.sh", ghScript)
+        guard result.exitCode == 0 else {
             update(idx, .failed("Could not open Terminal"))
             errorMessage = result.output
+            return
         }
+
+        // Retry loop — re-opens Terminal if the user taps "Try again"
+        repeat {
+            pollCancelled = false
+
+            let result = await runInTerminal(scriptPath: "/tmp/agent-setup-github.sh", ghScript)
+            guard result.exitCode == 0 else {
+                update(idx, .failed("Could not open Terminal"))
+                errorMessage = result.output
+                return
+            }
+
+            pendingTerminalAction = "Sign in to GitHub in the Terminal window.\n\nA browser tab will open — authorize the app there, then return here."
+            retryEnabled = true
+            let found = await waitForFile(
+                atPath: hostsFile.path,
+                timeout: 900,
+                stepIdx: idx,
+                waitingDetail: "Waiting for GitHub sign-in to complete…"
+            )
+            retryEnabled = false
+            pendingTerminalAction = nil
+
+            if found {
+                update(idx, .done)
+                return
+            }
+            // If pollCancelled, loop back and re-open Terminal fresh.
+        } while pollCancelled
+
+        update(idx, .failed("Sign-in timed out — tap Try Again or re-run setup"))
     }
 
     // MARK: - Keeper Commander
 
     private func installKeeperCommander() async -> Bool {
         let idx = stepKeeperInstall
+        guard case .keeper = options.gwsCredentials else {
+            update(idx, .skipped("Not using Keeper"))
+            return true
+        }
         let keeperPath = "\(brewBinDir)/keeper"
 
         if FileManager.default.fileExists(atPath: keeperPath) {
@@ -391,6 +479,24 @@ class SetupViewModel: ObservableObject {
         } else {
             update(idx, .failed("Install failed"))
             errorMessage = result.output
+            return false
+        }
+    }
+
+    private func install1PasswordCLI() async -> Bool {
+        let idx = stepKeeperInstall  // reuse the same step slot
+        let opPath = "\(brewBinDir)/op"
+        if FileManager.default.fileExists(atPath: opPath) {
+            update(idx, .skipped("Already installed"))
+            return true
+        }
+        update(idx, .running, detail: "Installing 1Password CLI…")
+        let result = await shell(brewPath, "install", "1password-cli")
+        if result.exitCode == 0 {
+            update(idx, .done)
+            return true
+        } else {
+            update(idx, .failed(firstMeaningfulLine(result.output, fallback: "1Password CLI install failed")))
             return false
         }
     }
@@ -421,44 +527,143 @@ class SetupViewModel: ObservableObject {
 
     private func authenticateGWS() async {
         let idx = stepGWSAuth
-        update(idx, .running, detail: "Opening Keeper login in Terminal…")
+
+        // Verify auth by calling gws — files alone aren't enough since a botched
+        // previous run can leave stale credential files. Also check output for
+        // auth error strings because some gws versions exit 0 on auth failure.
+        update(idx, .running, detail: "Checking Google Workspace auth…")
+        let gwsCheck = await shell("\(brewBinDir)/gws", "drive", "drives", "list")
+        let gwsAuthOK = gwsCheck.exitCode == 0
+            && !gwsCheck.output.contains("authError")
+            && !gwsCheck.output.contains("401")
+            && !gwsCheck.output.contains("No credentials")
+        if gwsAuthOK {
+            update(idx, .skipped("Already authenticated"))
+            return
+        }
+
+        // Clean up any stale marker from a previous attempt
+        let markerPath = "/tmp/agent-setup-gws-done"
+        try? FileManager.default.removeItem(atPath: markerPath)
+
+        update(idx, .running, detail: "Opening Terminal for Google auth…")
+
+        // Build credential-fetch block dynamically based on the user's chosen source
+        let credentialBlock: String
+        switch options.gwsCredentials {
+        case .keeper(let email, let uid):
+            credentialBlock = """
+            echo '🔐 Log in to Keeper (your browser will open)...'
+            \(brewBinDir)/keeper login \(email)
+            echo '✅ Keeper login complete.'
+            echo ''
+            echo '🔑 Fetching OAuth credentials from Keeper...'
+            export GOOGLE_WORKSPACE_CLI_CLIENT_ID=$(\(brewBinDir)/keeper get \(uid) --format json | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='login']")
+            export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET=$(\(brewBinDir)/keeper get \(uid) --format json | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='password']")
+            echo '✅ Credentials loaded.'
+            """
+
+        case .onePassword(let idRef, let secretRef):
+            credentialBlock = """
+            echo '🔑 Fetching OAuth credentials from 1Password...'
+            export GOOGLE_WORKSPACE_CLI_CLIENT_ID=$(op read "\(idRef)")
+            export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET=$(op read "\(secretRef)")
+            echo '✅ Credentials loaded.'
+            """
+
+        case .direct(let clientID, let clientSecret):
+            credentialBlock = """
+            export GOOGLE_WORKSPACE_CLI_CLIENT_ID="\(clientID)"
+            export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET="\(clientSecret)"
+            """
+        }
 
         // Build a shell script that:
-        // 1. Opens a new Terminal window
-        // 2. Runs keeper login (SSO browser flow)
-        // 3. Pulls client_id + client_secret from Keeper into env vars
-        // 4. Runs gws auth login (browser opens for Google consent)
-        // The Terminal window stays open so the user can see progress.
+        // 1. Fetches OAuth credentials (method varies by credentialBlock)
+        // 2. Writes ~/.config/gws/client_secret.json so gws can refresh tokens
+        //    in future shell sessions (env vars alone don't survive Terminal close)
+        // 3. Runs gws auth login (browser opens for Google consent)
+        // 4. Drops a marker file so the app knows it completed
         let gwsBin = "\(brewBinDir)/gws"
-        let authScript = """
-        tell application "Terminal"
-            activate
-            do script "echo '🔐 Step 1: Log in to Keeper (your browser will open)...' && \\
-                \(brewBinDir)/keeper login $USER@redventures.com && \\
-                echo '✅ Keeper login complete.' && \\
-                echo '' && \\
-                echo '🔑 Fetching OAuth credentials...' && \\
-                export GOOGLE_WORKSPACE_CLI_CLIENT_ID=$(\(brewBinDir)/keeper get \(gwsKeeperUID) --format json | python3 -c \\"import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='login']\\") && \\
-                export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET=$(\(brewBinDir)/keeper get \(gwsKeeperUID) --format json | python3 -c \\"import json,sys; d=json.load(sys.stdin); [print(f['value'][0]) for f in d['fields'] if f['type']=='password']\\") && \\
-                echo '✅ Credentials loaded.' && \\
-                echo '' && \\
-                echo '🌐 Step 2: Authorise with Google (your browser will open)...' && \\
-                \(gwsBin) auth login --scopes '\(gwsScopes)' && \\
-                echo '' && \\
-                echo '✅ Google Workspace CLI is ready!' && \\
-                echo 'You can close this window.'"
-        end tell
+        let gwsScript = """
+        #!/bin/bash
+        set -e
+        printf '\\033]0;Agent Setup — Google Workspace Auth\\007'
+        \(credentialBlock)
+        echo ''
+        echo '📝 Saving credentials file...'
+        mkdir -p ~/.config/gws
+        cat > ~/.config/gws/client_secret.json << EOF
+        {
+          "installed": {
+            "client_id": "$GOOGLE_WORKSPACE_CLI_CLIENT_ID",
+            "client_secret": "$GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "redirect_uris": ["http://localhost"]
+          }
+        }
+        EOF
+        echo '✅ Credentials file saved.'
+        echo ''
+        echo '🌐 Authorise with Google (your browser will open)...'
+        \(gwsBin) auth login --scopes '\(gwsScopes)'
+        echo ''
+        echo '✅ Google Workspace CLI is ready!'
+        echo 'You can close this window.'
+        touch \(markerPath)
         """
 
-        let result = await shell("/usr/bin/osascript", "-e", authScript)
-        if result.exitCode == 0 {
-            // We can't block on the Terminal window completing, so mark as
-            // "in progress" and let the DoneView explain what happened.
-            update(idx, .done, detail: "Follow the steps in the Terminal window")
-        } else {
+        let terminalActionMsg: String
+        switch options.gwsCredentials {
+        case .keeper:
+            terminalActionMsg = "Two steps will happen in the Terminal window:\n\n1. Log in to Keeper (browser opens, pick a 2FA option)\n2. Authorize with Google (browser opens again)\n\nThe app continues automatically when both are done."
+        case .onePassword:
+            terminalActionMsg = "Two steps will happen in the Terminal window:\n\n1. Credentials fetched from 1Password\n2. Authorize with Google (browser opens)\n\nThe app continues automatically when done."
+        case .direct:
+            terminalActionMsg = "Your browser will open for Google authorization.\n\nSign in and grant access, then return here.\n\nThe app continues automatically when done."
+        }
+
+        let result = await runInTerminal(scriptPath: "/tmp/agent-setup-gws.sh", gwsScript)
+        guard result.exitCode == 0 else {
             update(idx, .failed("Could not open Terminal"))
             errorMessage = result.output
+            return
         }
+
+        // Retry loop — re-opens Terminal if the user taps "Try again"
+        repeat {
+            pollCancelled = false
+            try? FileManager.default.removeItem(atPath: markerPath)
+
+            let result = await runInTerminal(scriptPath: "/tmp/agent-setup-gws.sh", gwsScript)
+            guard result.exitCode == 0 else {
+                update(idx, .failed("Could not open Terminal"))
+                errorMessage = result.output
+                return
+            }
+
+            pendingTerminalAction = terminalActionMsg
+            retryEnabled = true
+            let found = await waitForFile(
+                atPath: markerPath,
+                timeout: 900,
+                stepIdx: idx,
+                waitingDetail: "Waiting for Google auth to complete…"
+            )
+            retryEnabled = false
+            pendingTerminalAction = nil
+
+            if found {
+                update(idx, .done)
+                return
+            }
+            // If pollCancelled, loop back and re-open Terminal fresh.
+            // If genuine timeout, fall through to failure.
+        } while pollCancelled
+
+        update(idx, .failed("Auth timed out — tap Try Again or re-run setup"))
     }
 
     // MARK: - Shared Helpers
@@ -523,11 +728,54 @@ class SetupViewModel: ObservableObject {
         steps[index].detail = detail
     }
 
+    /// Polls for a file at `path` every 2 seconds for up to `timeout` seconds.
+    /// Updates `steps[stepIdx].detail` while waiting.
+    /// Returns `true` if the file appeared before the timeout, `false` otherwise.
+    /// Returns true if the file appeared, false if timed out or `retryTerminalAuth()` was called.
+    /// Callers can check `pollCancelled` afterwards to distinguish the two false cases.
+    private func waitForFile(atPath path: String, timeout: Int, stepIdx: Int, waitingDetail: String) async -> Bool {
+        update(stepIdx, .running, detail: waitingDetail)
+        var elapsed = 0
+        while elapsed < timeout && !pollCancelled {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            elapsed += 2
+            if FileManager.default.fileExists(atPath: path) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Writes `script` to a temp file and opens it in a new Terminal window.
+    /// Avoids the `cmdand>` noise that appears when multi-line commands are
+    /// passed directly via `do script`.
+    private func runInTerminal(scriptPath: String, _ script: String) async -> (exitCode: Int32, output: String) {
+        do {
+            try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+        } catch {
+            return (-1, "Failed to write script: \(error)")
+        }
+        let appleScript = """
+        tell application "Terminal"
+            activate
+            do script "bash \(scriptPath)"
+        end tell
+        """
+        return await shell("/usr/bin/osascript", "-e", appleScript)
+    }
+
     private func shell(_ executable: String, _ args: String...) async -> (exitCode: Int32, output: String) {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = args
+            // Inherit the current environment then ensure Homebrew's bin dirs are
+            // in PATH. Without this, tools like npm invoke `env node` and fail
+            // because the app's launch environment may not include /opt/homebrew/bin.
+            var env = ProcessInfo.processInfo.environment
+            env["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            process.environment = env
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe

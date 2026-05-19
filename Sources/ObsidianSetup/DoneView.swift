@@ -73,7 +73,7 @@ struct DoneView: View {
                         .buttonStyle(.borderedProminent)
                     } else {
                         Button("Open Obsidian") {
-                            NSWorkspace.shared.open(URL(string: "obsidian://")!)
+                            NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Obsidian.app"))
                         }
                         .buttonStyle(.bordered)
                     }

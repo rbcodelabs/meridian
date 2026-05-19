@@ -24,7 +24,7 @@ struct ContentView: View {
                     screen = .done(
                         needsRestart: vm.needsRestart,
                         installedObsidian: vm.options.installObsidian,
-                        gwsAuthPending: vm.options.installGWS
+                        gwsAuthPending: false
                     )
                 }
 

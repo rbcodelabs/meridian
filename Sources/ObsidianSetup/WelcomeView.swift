@@ -16,6 +16,36 @@ struct WelcomeView: View {
     @State private var hasGitHubAuth: Bool = false
     @State private var hasGWS: Bool = false
 
+    // GWS credential fields (combined into options.gwsCredentials on submit)
+    @State private var gwsSource: GWSSource = .keeper
+    @State private var keeperEmail: String = ""
+    @State private var keeperUID: String = ""
+    @State private var opClientIDRef: String = ""
+    @State private var opSecretRef: String = ""
+    @State private var directClientID: String = ""
+    @State private var directClientSecret: String = ""
+
+    enum GWSSource: String, CaseIterable, Identifiable {
+        case keeper      = "Keeper"
+        case onePassword = "1Password"
+        case direct      = "Enter directly"
+        var id: String { rawValue }
+    }
+
+    private var canSetUp: Bool {
+        let anySelected = options.installObsidian || options.installHomebrew ||
+                          options.installClaudeCode || options.installGitHub || options.installGWS
+        guard anySelected else { return false }
+        if options.installGWS && !hasGWS {
+            switch gwsSource {
+            case .keeper:      return !keeperEmail.isEmpty && !keeperUID.isEmpty
+            case .onePassword: return !opClientIDRef.isEmpty && !opSecretRef.isEmpty
+            case .direct:      return !directClientID.isEmpty && !directClientSecret.isEmpty
+            }
+        }
+        return true
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
@@ -35,7 +65,8 @@ struct WelcomeView: View {
 
             Divider().padding(.vertical, 20)
 
-            // Components
+            // Components — scrollable so expanded credential fields don't overflow
+            ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Components")
                     .font(.headline)
@@ -55,7 +86,7 @@ struct WelcomeView: View {
                         if options.installObsidian {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
-                                    TextField("Path", text: $vaultPath)
+                                    TextField("Vault path", text: $vaultPath)
                                         .textFieldStyle(.roundedBorder)
                                     Button("Browse…") { browse() }
                                 }
@@ -63,7 +94,12 @@ struct WelcomeView: View {
                                     .font(.caption)
                                     .foregroundStyle(.tertiary)
 
-                                // Plugin summary + picker
+                                TextField("Starter vault GitHub URL (optional)", text: $options.vaultGitHubURL)
+                                    .textFieldStyle(.roundedBorder)
+                                Text("e.g. https://github.com/org/repo — leave blank for an empty vault")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+
                                 HStack {
                                     let selected = options.obsidianPlugins.filter(\.isSelected).count
                                     let total = options.obsidianPlugins.count
@@ -159,28 +195,82 @@ struct WelcomeView: View {
                             Text("Google Workspace CLI (gws)")
                                 .fontWeight(.medium)
                             if hasGWS {
-                                Label("Already installed", systemImage: "checkmark.circle.fill")
+                                Label("Already set up", systemImage: "checkmark.circle.fill")
                                     .font(.caption)
                                     .foregroundStyle(.green)
                             }
                         }
-                        Text("Lets Claude access Drive, Gmail, Calendar, and Docs — requires a Keeper login step")
+                        Text("Lets Claude access Drive, Gmail, Calendar, and Docs")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                        if options.installGWS && !hasGWS {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Picker("Credentials", selection: $gwsSource) {
+                                    ForEach(GWSSource.allCases) { source in
+                                        Text(source.rawValue).tag(source)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .padding(.top, 4)
+
+                                switch gwsSource {
+                                case .keeper:
+                                    TextField("Your email (e.g. you@company.com)", text: $keeperEmail)
+                                        .textFieldStyle(.roundedBorder)
+                                    TextField("Keeper record UID", text: $keeperUID)
+                                        .textFieldStyle(.roundedBorder)
+                                    Text("The Keeper record must contain a Login field (client ID) and Password field (client secret).")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+
+                                case .onePassword:
+                                    TextField("Client ID ref  (op://vault/item/field)", text: $opClientIDRef)
+                                        .textFieldStyle(.roundedBorder)
+                                    TextField("Client Secret ref  (op://vault/item/field)", text: $opSecretRef)
+                                        .textFieldStyle(.roundedBorder)
+                                    Text("The 1Password app must be running and unlocked.")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+
+                                case .direct:
+                                    TextField("Google OAuth Client ID", text: $directClientID)
+                                        .textFieldStyle(.roundedBorder)
+                                    SecureField("Google OAuth Client Secret", text: $directClientSecret)
+                                        .textFieldStyle(.roundedBorder)
+                                    Text("Create an OAuth 2.0 Desktop app credential in Google Cloud Console.")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            .padding(.top, 4)
+                            .padding(.leading, 2)
+                        }
                     }
                 }
+                .animation(.easeInOut, value: options.installGWS)
             }
+            } // ScrollView
 
-            Spacer()
+            Divider().padding(.top, 16)
 
             HStack {
                 Spacer()
                 Button("Set Up Now") {
-                    onStart(URL(fileURLWithPath: vaultPath), options)
+                    var finalOptions = options
+                    switch gwsSource {
+                    case .keeper:
+                        finalOptions.gwsCredentials = .keeper(email: keeperEmail, recordUID: keeperUID)
+                    case .onePassword:
+                        finalOptions.gwsCredentials = .onePassword(clientIDRef: opClientIDRef, clientSecretRef: opSecretRef)
+                    case .direct:
+                        finalOptions.gwsCredentials = .direct(clientID: directClientID, clientSecret: directClientSecret)
+                    }
+                    onStart(URL(fileURLWithPath: vaultPath), finalOptions)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(!options.installObsidian && !options.installHomebrew && !options.installClaudeCode && !options.installGitHub && !options.installGWS)
+                .disabled(!canSetUp)
             }
         }
         .sheet(isPresented: $showingPluginSheet) {
@@ -194,8 +284,7 @@ struct WelcomeView: View {
             if hasClaudeLogin { options.installClaudeCode = false }
             hasGitHubAuth = detectGitHubAuth()
             if hasGitHubAuth { options.installGitHub = false }
-            hasGWS = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/gws")
-                || FileManager.default.fileExists(atPath: "/usr/local/bin/gws")
+            hasGWS = detectGWSAuth()
             if hasGWS { options.installGWS = false }
         }
     }
@@ -212,6 +301,19 @@ struct WelcomeView: View {
         if panel.runModal() == .OK, let url = panel.url {
             vaultPath = url.appendingPathComponent("TeamVault").path
         }
+    }
+
+    /// Returns true only if gws is installed AND the credential + token files
+    /// are both present. Binary-only means auth was never completed — keep the
+    /// toggle on so the auth step runs.
+    private func detectGWSAuth() -> Bool {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        let binaryExists = fm.fileExists(atPath: "/opt/homebrew/bin/gws")
+            || fm.fileExists(atPath: "/usr/local/bin/gws")
+        let tokenExists = fm.fileExists(atPath: home.appendingPathComponent(".config/gws/token_cache.json").path)
+        let credsExist  = fm.fileExists(atPath: home.appendingPathComponent(".config/gws/client_secret.json").path)
+        return binaryExists && tokenExists && credsExist
     }
 
     /// Returns true if `gh auth login` has already been completed, detected by

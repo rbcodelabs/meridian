@@ -71,6 +71,21 @@ struct ObsidianPlugin: Identifiable {
 
 // MARK: - Setup Options
 
+/// How the GWS OAuth client credentials are obtained during setup.
+enum GWSCredentialSource: Equatable {
+    case keeper(email: String, recordUID: String)
+    case onePassword(clientIDRef: String, clientSecretRef: String)
+    case direct(clientID: String, clientSecret: String)
+
+    var isComplete: Bool {
+        switch self {
+        case .keeper(let email, let uid):       return !email.isEmpty && !uid.isEmpty
+        case .onePassword(let id, let secret):  return !id.isEmpty && !secret.isEmpty
+        case .direct(let id, let secret):       return !id.isEmpty && !secret.isEmpty
+        }
+    }
+}
+
 struct SetupOptions {
     var installObsidian: Bool = true
     var obsidianPlugins: [ObsidianPlugin] = ObsidianPlugin.all
@@ -78,4 +93,9 @@ struct SetupOptions {
     var installClaudeCode: Bool = true
     var installGitHub: Bool = true
     var installGWS: Bool = true
+    /// GitHub archive URL for the starter vault (e.g. https://github.com/org/repo).
+    /// Empty string means skip the vault download — register an empty vault instead.
+    var vaultGitHubURL: String = ""
+    /// How to obtain the GWS OAuth client ID and secret.
+    var gwsCredentials: GWSCredentialSource = .keeper(email: "", recordUID: "")
 }
