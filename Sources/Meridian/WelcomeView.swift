@@ -55,10 +55,10 @@ struct WelcomeView: View {
                     Image(systemName: "wand.and.stars")
                         .font(.system(size: 28))
                         .foregroundStyle(.purple)
-                    Text("Agent Setup")
+                    Text("Meridian")
                         .font(.system(size: 26, weight: .bold))
                 }
-                Text("Set up your AI-powered developer environment in minutes.")
+                Text("Your agentic knowledge working environment.")
                     .foregroundStyle(.secondary)
                     .padding(.leading, 38)
             }

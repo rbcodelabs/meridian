@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-app.sh — Build ObsidianSetup.app bundle
+# build-app.sh — Build Meridian.app bundle
 # Produces a self-contained .app in ./build/ ready to distribute or drag to /Applications.
 #
 # Usage:
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 CONFIG="${1:-debug}"
-PRODUCT="ObsidianSetup"
+PRODUCT="Meridian"
 BUILD_DIR="build"
 APP_DIR="$BUILD_DIR/$PRODUCT.app"
 CONTENTS="$APP_DIR/Contents"
@@ -47,11 +47,11 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundleExecutable</key>
     <string>$PRODUCT</string>
     <key>CFBundleIdentifier</key>
-    <string>com.rbcodelabs.obsidian-setup</string>
+    <string>com.rbcodelabs.meridian</string>
     <key>CFBundleName</key>
-    <string>Team Workspace Setup</string>
+    <string>Meridian</string>
     <key>CFBundleDisplayName</key>
-    <string>Team Workspace Setup</string>
+    <string>Meridian</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
