@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Meridian</title>
+        <item>
+            <title>1.0</title>
+            <pubDate>Tue, 19 May 2026 02:12:39 +0000</pubDate>
+            <link>https://github.com/rickbowman-br/bankrate-meridian</link>
+            <sparkle:version>1.0</sparkle:version>
+            <sparkle:shortVersionString>1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/rickbowman-br/bankrate-meridian/releases/download/1.0.0/Bankrate-Meridian-1.0.0.zip" length="523118" type="application/octet-stream" sparkle:edSignature="grwjcsM6WYKtd9FK3HfVGRxJt+7SHwiVq1gU6vAQvtYbDAYCJ7M005UZk+mBkjnhmlbvt6KX8gLspuDiOuc4Cg=="/>
+        </item>
+    </channel>
+</rss>
