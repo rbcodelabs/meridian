@@ -72,7 +72,6 @@ jobs:
           publish_branch: gh-pages
           publish_dir: build/
           destination_dir: bankrate
-          include_files: appcast.xml
           keep_files: true
 
       # ── Create GitHub Release ────────────────────────────────────────────────
