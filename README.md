@@ -1,127 +1,103 @@
-# Team Workspace Setup
+# Meridian
 
-A native macOS app that gets your shared Obsidian vault and AI tooling running in minutes.
+A native macOS app that sets up an agentic knowledge working environment in minutes — Obsidian vault, Claude Code, GitHub CLI, and Google Workspace CLI, all configured and ready to go.
 
 ## What it does
 
-1. Downloads the team vault from GitHub and registers it with Obsidian
-2. Optionally installs **Claude Code** (AI coding assistant via Homebrew + npm)
-3. Optionally installs **Google Workspace CLI** (`gws`) so Claude can access Drive, Gmail, Calendar, Docs, and more
+1. Clones a team Obsidian vault from GitHub (or creates a blank one) and registers it with Obsidian
+2. Installs **Homebrew** (macOS package manager)
+3. Installs **Claude Code** (AI coding assistant via npm)
+4. Installs **GitHub CLI** (`gh`) and authenticates
+5. Installs **Google Workspace CLI** (`gws`) so Claude can access Drive, Gmail, Calendar, and Docs
 
-Each optional component is detected automatically — if you're already signed into Claude or already have `gws` installed, those toggles are disabled and marked "Already installed."
-
-## Install
-
-Paste this in Terminal:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/rbcodelabs/ObsidianSetup/main/install.sh)"
-```
-
-The app downloads, installs to `/Applications`, and launches automatically.
-
-Or build it yourself — see [Building from source](#building-from-source) below.
+Each component is detected automatically — if already installed and signed in, it's skipped.
 
 ## Requirements
 
 - macOS 13+
 - [Obsidian](https://obsidian.md) installed
 
-## Optional components
-
-### Claude Code
-
-Installs via Homebrew + npm (`@anthropic-ai/claude-code`). Node.js is installed automatically if needed. After installation, run `claude` in any terminal to sign in.
-
-Skipped automatically if Claude Desktop / Claude Code already has an active account login detected in `~/Library/Application Support/Claude/config.json`.
-
-### Google Workspace CLI (`gws`)
-
-Installs `googleworkspace-cli` via Homebrew, then opens a Terminal window that walks through:
-
-1. **Keeper login** — SSO browser flow to authenticate with Keeper Commander
-2. **Credential fetch** — pulls the GWS OAuth `client_id` and `client_secret` from the shared Keeper record into environment variables (never written to disk)
-3. **Google auth** — runs `gws auth login` which opens a browser for Google consent
-
-Requires access to the **Product AI** shared folder in Keeper.
-
-Skipped automatically if `gws` is already installed at `/opt/homebrew/bin/gws` (or `/usr/local/bin/gws` on Intel Macs).
-
 ## Building from source
 
 ```bash
-git clone https://github.com/rbcodelabs/ObsidianSetup.git
-cd ObsidianSetup
+git clone https://github.com/rbcodelabs/meridian.git
+cd meridian
 
-# Quick run (no .app bundle needed)
-swift run
+./build-app.sh           # debug build
+./build-app.sh release   # optimised build
 
-# Build a distributable .app
-./build-app.sh           # debug
-./build-app.sh release   # optimised
-
-open build/ObsidianSetup.app
+open build/Meridian.app
 ```
 
 Requires Xcode Command Line Tools (`xcode-select --install`).
 
-## Testing in a VM
+## Customizing for your org
 
-We test the installer end-to-end in a fresh macOS VM using [UTM](https://mac.getutm.app) on Apple Silicon.
+Meridian is a [GitHub template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template). Generate a new repo from it, then add a single file:
 
-### First-time setup
+**`Sources/Meridian/Config.swift`**
 
-**1. Install UTM**
+```swift
+enum OrgConfig {
+    static let appTitle          = "Acme Meridian"
+    static let appSubtitle       = "Your Acme agentic knowledge working environment."
+    static let defaultVaultURL   = "https://github.com/acme/acme-vault"
+    static let defaultGWSSource  = GWSSource.keeper   // or .onePassword or .direct
+    static let defaultEmailDomain = "acme.com"
+    static let defaultKeeperUID  = ""                 // optional pre-fill
+}
+```
+
+The app reads all branding and defaults from this file. Everything else — install logic, UI, plugin list, auth flows — inherits from upstream unchanged.
+
+### Pulling upstream changes into your fork
+
+```bash
+git remote add upstream https://github.com/rbcodelabs/meridian.git
+git fetch upstream
+git merge upstream/main
+```
+
+`Config.swift` only exists in your fork, so merges are always clean.
+
+## GWS credential sources
+
+Three modes, selectable in the welcome screen:
+
+- **Keeper** — logs in to Keeper Commander, fetches client ID and secret from a record UID
+- **1Password** — reads `op://vault/item/field` references using the `op` CLI
+- **Direct** — user pastes client ID and secret directly (stored temporarily, never logged)
+
+## VM testing
+
+We test end-to-end on a fresh macOS VM using [UTM](https://mac.getutm.app):
 
 ```bash
 brew install --cask utm
-```
-
-**2. Download the macOS IPSW (~18 GB)**
-
-The `ipsw` CLI fetches the correct restore image for a virtual Mac directly from Apple:
-
-```bash
 brew install ipsw
-
-# Check the URL first
-ipsw download ipsw --device VirtualMac2,1 --latest --urls
-
-# Then download (~18 GB, takes a few minutes)
 ipsw download ipsw --device VirtualMac2,1 --latest --confirm
 ```
 
-Or download directly with curl (replace the URL with the one from `--urls` above for the latest build):
+Create a VM (8 GB RAM, 80 GB disk), install macOS, then serve the `.app` over HTTP from the host:
 
 ```bash
-curl -L -o ~/Downloads/UniversalMac_26.5_25F71_Restore.ipsw \
-  "https://updates.cdn-apple.com/2026SpringFCS/fullrestores/122-58869/DFB1CEEF-5619-4591-9924-E20DB2C8FED0/UniversalMac_26.5_25F71_Restore.ipsw"
+cd build && python3 -m http.server 8080
+# Download from VM: http://192.168.64.1:8080/Meridian.app.zip
 ```
-
-**3. Create the VM in UTM**
-
-- Open UTM → **"+" → Virtualize → Apple**
-- Click **Browse** and select the downloaded `.ipsw` file
-- **Memory:** 8192 MB
-- **Storage:** 80 GB
-- **Name:** `macOS Tahoe - AgentSetup Test`
-- Save, then Play to run the macOS installer
 
 ### Test checklist
 
-Run through these scenarios on a fresh macOS install (no prior Homebrew, Claude login, or `gh` auth):
+- [ ] All components on — full happy path, clean machine
+- [ ] Already-installed detection — run twice; second run skips installed components
+- [ ] Obsidian only — confirm vault opens and plugins install
+- [ ] GWS auth flow — Terminal window opens, credential source selected, auth completes
+- [ ] Failed step — confirm app stays on progress screen with error detail, doesn't auto-advance
+- [ ] Retry — confirm "Try again" re-opens Terminal without restarting the app
 
-- [ ] **All components on** — full happy path, clean machine
-- [ ] **Obsidian only** — uncheck everything except Obsidian vault; confirm plugins install and vault opens
-- [ ] **CLI only** — uncheck Obsidian; confirm setup completes with no Obsidian prompts
-- [ ] **Plugin picker** — deselect a few plugins before setup; confirm they are absent from `.obsidian/plugins/` and `community-plugins.json` in the extracted vault
-- [ ] **Already-installed detection** — run the app a second time; all installed components should show "Already installed" and be unchecked
-- [ ] **GWS auth flow** — confirm Terminal window opens and Keeper + Google OAuth steps run in sequence
+## What's included in the default plugin list
 
----
+**rbcodelabs plugins (bundled)**
+- Claude Threads, Google Docs Sync, Linear Integration, Kanban Bases View, Tasks, BRAT, MDX Support
 
-## What's included in the vault
-
-- Claude Threads, Google Docs Sync, Linear Integration
-- Kanban Bases View
-- 15+ community plugins (Dataview, Tasks, Templater, QuickAdd, and more)
+**Community plugins**
+- Dataview, Templater, QuickAdd, Periodic Notes, Calendar, Omnisearch, Smart Connections, and more
