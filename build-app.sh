@@ -10,6 +10,12 @@ set -euo pipefail
 
 CONFIG="${1:-debug}"
 PRODUCT="Meridian"
+
+# Sparkle auto-update settings.
+# SPARKLE_FEED_URL can be overridden at build time for org forks:
+#   SPARKLE_FEED_URL=https://... ./build-app.sh release
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://rbcodelabs.github.io/meridian/appcast.xml}"
+SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-c59IRwX31JmB8E2HaO4LgaMcOtZ3BsZ2f1YxTA8p5yc=}"
 BUILD_DIR="build"
 APP_DIR="$BUILD_DIR/$PRODUCT.app"
 CONTENTS="$APP_DIR/Contents"
@@ -66,6 +72,12 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 rbcodelabs</string>
+    <key>SUFeedURL</key>
+    <string>$SPARKLE_FEED_URL</string>
+    <key>SUPublicEDKey</key>
+    <string>$SPARKLE_PUBLIC_KEY</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
 </dict>
 </plist>
 EOF
