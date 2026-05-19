@@ -15,7 +15,7 @@ PRODUCT="Meridian"
 # SPARKLE_FEED_URL can be overridden at build time for org forks:
 #   SPARKLE_FEED_URL=https://... ./build-app.sh release
 SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://rbcodelabs.github.io/meridian/appcast.xml}"
-SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-c59IRwX31JmB8E2HaO4LgaMcOtZ3BsZ2f1YxTA8p5yc=}"
+SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-XRZZFzGQX/r/gOPcn+l+E+1I5LHXX+ZF0CkdR2cnmYs=}"
 BUILD_DIR="build"
 APP_DIR="$BUILD_DIR/$PRODUCT.app"
 CONTENTS="$APP_DIR/Contents"
