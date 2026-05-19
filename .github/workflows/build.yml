@@ -67,7 +67,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: build/
-          include_files: appcast.xml
           keep_files: true
 
       # ── Create GitHub Release ────────────────────────────────────────────────
