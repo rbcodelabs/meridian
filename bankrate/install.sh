@@ -3,7 +3,7 @@ set -e
 
 echo "📥 Downloading Bankrate Meridian..."
 TMPDIR=$(mktemp -d)
-curl -fsSL "https://github.com/bankrate-prototypes/bankrate-meridian/releases/latest/download/Bankrate-Meridian-1.0.0.zip" \
+curl -fsSL "https://rbcodelabs.github.io/meridian/bankrate/Bankrate-Meridian-1.0.0.zip" \
   -o "$TMPDIR/Bankrate-Meridian.zip"
 
 echo "📦 Installing..."
